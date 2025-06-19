@@ -10,7 +10,7 @@ A real-time data dashboard that fetches global news headlines every 5 hours, ana
 |------------------|-----------------------------------------------|
 | Scheduling       | APScheduler                                   |
 | Backend          | Python + requests                             |
-| Sentiment NLP    | Hugging Face Transformers (`distilbert-sst-2`)|
+| Sentiment NLP    | VADER
 | Database         | PostgreSQL (via SQLAlchemy ORM)               |
 | Visualization    | Plotly Dash                                   |
 | Env Management   | [UV](https://github.com/astral-sh/uv)         |
