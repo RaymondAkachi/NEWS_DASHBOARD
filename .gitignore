@@ -1,0 +1,42 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment (e.g. uv or venv)
+.venv/
+.uv/
+
+# Environment variables
+*.env
+.env.*
+
+# Local cache
+*.log
+*.sqlite3
+*.db
+*.pid
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Python egg files
+*.egg
+*.egg-info/
+dist/
+build/
+
+# VSCode / PyCharm settings
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Trained models or saved datasets
+*.pkl
+*.joblib
+*.h5
+app/models/ag_news_train/
+app/models/ag_news_classifier.pkl
