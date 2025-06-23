@@ -7,6 +7,7 @@ load_dotenv()
 
 NEWS_API = os.getenv("NEWS_API_KEY")
 NEWS_URL = f"https://newsdata.io/api/1/latest?apikey={NEWS_API}&language=en"
+# NEWS_URL = f"https://newsdata.io/api/1/archive?apikey={NEWS_API}&language=en&from_date=2025-05-16&to_date=2025-06-23"
 
 
 def extract_data(json_data: dict) -> dict:
@@ -21,6 +22,8 @@ def extract_data(json_data: dict) -> dict:
         return {}
 
     results = json_data.get("results", [])
+    if results == []:
+        print("No results found")
     for article in results:
         def safe_join(value):
             if isinstance(value, list):
@@ -48,7 +51,8 @@ async def get_news():
 
             data_json = response.json()
             return extract_data(data_json)
-        except BaseException:
+        except BaseException as e:
+            print(e)
             return {}
 
 if __name__ == "__main__":

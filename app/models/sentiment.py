@@ -10,4 +10,4 @@ def analyze_sentiment(text):
 
 if __name__ == "__main__":
     print(analyze_sentiment(
-        "Ayatollah Ali Khamenei, is dead"))
+        "Everyone in the world is sad"))
