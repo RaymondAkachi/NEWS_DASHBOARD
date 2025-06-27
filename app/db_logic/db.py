@@ -9,7 +9,7 @@ load_dotenv()
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-print(DATABASE_URL)
+# print(DATABASE_URL)
 # Create an asynchronous engine
 engine = create_async_engine(DATABASE_URL)
 
