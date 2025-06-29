@@ -42,6 +42,6 @@ if __name__ == "__main__":
         print(daily_all)
 
         # Last-month sentiment for “Business”
-        daily_business = await get_daily_avg_sentiment("Business")
-        print(daily_business)
+        # daily_business = await get_daily_avg_sentiment("Business")
+        # print(daily_business)
     asyncio.run(test())

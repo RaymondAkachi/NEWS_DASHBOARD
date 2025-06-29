@@ -3,10 +3,22 @@ from dash.dependencies import Input, Output, State, ALL
 import dash_bootstrap_components as dbc
 from dash import dcc, html, dash_table
 import plotly.express as px
+from redis import Redis
+import os
+from dotenv import load_dotenv
 import pandas as pd
 import numpy as np  # For random data in line graph
 from urllib.parse import urlparse
 from datetime import date, timedelta
+
+from .get_custom_data import get_data, top_news
+
+
+load_dotenv('app\\.env')
+REDIS_URL = os.getenv("REDIS_URL")
+NEWS_API = os.getenv("NEWS_API_KEY")
+NEWS_URL = f"https://newsdata.io/api/1/latest?apikey={NEWS_API}&language=en&q=pizza"
+client = Redis.from_url(REDIS_URL, decode_responses=True)
 
 # --- 1. Prepare Dummy Data (Same as before) ---
 # Dropdown Options
@@ -24,12 +36,52 @@ category_options = [
 ]
 
 country_options = [
-    {'label': 'USA', 'value': 'usa'},
-    {'label': 'Canada', 'value': 'canada'},
-    {'label': 'UK', 'value': 'uk'},
-    {'label': 'Germany', 'value': 'germany'},
-    {'label': 'Australia', 'value': 'australia'}
+    {'label': 'United States', 'value': 'United States'},
+    {'label': 'Canada', 'value': 'Canada'},
+    {'label': 'United Kingdom', 'value': 'United Kingdom'},
+    # Note: This will fetch English news for Germany based on COUNTRY_CODES
+    {'label': 'Germany', 'value': 'Germany'},
+    {'label': 'Australia', 'value': 'Australia'},
+    # Adding 5 more popular countries
+    {'label': 'India', 'value': 'India'},
+    {'label': 'France', 'value': 'France_en'},  # English news from France
+    {'label': 'Japan', 'value': 'Japan_en'},  # English news from Japan
+    {'label': 'Brazil', 'value': 'Brazil_en'},  # English news from Brazil
+    # English news from China (often limited, but useful for example)
+    {'label': 'China', 'value': 'China_en'},
+    # Countries you specifically asked about
+    {'label': 'Nigeria', 'value': 'Nigeria'},
+    {'label': 'Netherlands (English)', 'value': 'Netherlands_en'},
+    # If you also want Dutch news
+    {'label': 'Netherlands (Dutch)', 'value': 'Netherlands_nl'},
+    {'label': 'Zambia', 'value': 'Zambia'},
+    # You can add more as needed
 ]
+
+COUNTRY_CODES = {
+    'United States': {'gl': 'US', 'hl': 'en', 'ceid': 'US:en'},
+    'Canada': {'gl': 'CA', 'hl': 'en', 'ceid': 'CA:en'},
+    'United Kingdom': {'gl': 'GB', 'hl': 'en', 'ceid': 'GB:en'},
+    # English news from Germany
+    'Germany': {'gl': 'DE', 'hl': 'en', 'ceid': 'DE:en'},
+    'Australia': {'gl': 'AU', 'hl': 'en', 'ceid': 'AU:en'},
+    # 5 Most Popular Countries added
+    'India': {'gl': 'IN', 'hl': 'en', 'ceid': 'IN:en'},
+    # English news from France
+    'France_en': {'gl': 'FR', 'hl': 'en', 'ceid': 'FR:en'},
+    # English news from Japan
+    'Japan_en': {'gl': 'JP', 'hl': 'en', 'ceid': 'JP:en'},
+    # English news from Brazil
+    'Brazil_en': {'gl': 'BR', 'hl': 'en', 'ceid': 'BR:en'},
+    # English news from China
+    'China_en': {'gl': 'CN', 'hl': 'en', 'ceid': 'CN:en'},
+    # Countries you specifically asked about
+    'Nigeria': {'gl': 'NG', 'hl': 'en', 'ceid': 'NG:en'},
+    'Netherlands_en': {'gl': 'NL', 'hl': 'en', 'ceid': 'NL:en'},
+    # Dutch news for Netherlands
+    'Netherlands_nl': {'gl': 'NL', 'hl': 'nl', 'ceid': 'NL:nl'},
+    'Zambia': {'gl': 'ZM', 'hl': 'en', 'ceid': 'ZM:en'},
+}
 
 # Dummy Data for Line Graph
 df_line = pd.DataFrame({
@@ -113,6 +165,20 @@ app = dash.Dash(__name__, external_stylesheets=[
 
 # --- 3. Define Dashboard Layout ---
 app.layout = dbc.Container([
+
+    # Storing needed values in browser session
+    dcc.Store(id='last-searched-query-store', data=''),
+    dcc.Store(id='search-mode', data='default'),
+
+    # Row 1: Dashboard Title
+    dbc.Row(
+        dbc.Col(
+            html.H1("GLOBAL NEWS DASHBOARD",
+                    className="text-center my-4 display-4 text-primary"),
+            width=12
+        )
+    ),
+
     # Placeholder for the dynamically added input box
     dbc.Row(
         dbc.Col(
@@ -124,15 +190,6 @@ app.layout = dbc.Container([
             width=12
         ),
         className="mb-3"
-    ),
-
-    # Row 1: Dashboard Title
-    dbc.Row(
-        dbc.Col(
-            html.H1("GLOBAL NEWS SENTIMENT DASHBOARD",
-                    className="text-center my-4 display-4 text-primary"),
-            width=12
-        )
     ),
 
     # Row 2: Filters (Dropdowns) with new button
@@ -265,7 +322,7 @@ app.layout = dbc.Container([
                             dcc.Dropdown(
                                 id='country-dropdown',
                                 options=country_options,
-                                value='usa',
+                                value='United States',
                                 clearable=False,
                                 className="flex-grow-1"
                             ),
@@ -276,6 +333,7 @@ app.layout = dbc.Container([
                 dbc.CardBody(
                     html.Div(
                         news_elements,
+                        id='news-bar',
                         style={
                             'height': '350px',
                             'overflowY': 'scroll',
@@ -324,13 +382,15 @@ def toggle_offcanvas(n_clicks, is_open):
     Output("category-dropdown", "value"),  # To reset its value
     Output("offcanvas-search-options", "is_open",
            allow_duplicate=True),  # To close offcanvas
+    Output("search-mode", "data"),
     Input("custom-search-button", "n_clicks"),
     Input("default-search-button", "n_clicks"),
+    State("search-mode", "data"),
     # Use State to know if a click occurred, but not trigger on initial load for these
     # States for dropdowns not needed as we just reset them
     prevent_initial_call=True
 )
-def handle_search_mode(custom_clicks, default_clicks):
+def handle_search_mode(custom_clicks, default_clicks, search_mode):
     ctx = dash.callback_context
     if not ctx.triggered_id:
         raise dash.exceptions.PreventUpdate
@@ -346,11 +406,25 @@ def handle_search_mode(custom_clicks, default_clicks):
     offcanvas_open = False  # Close offcanvas after selection
 
     if triggered_id == "custom-search-button":
-        input_box = dbc.Input(
-            id="custom-search-query-input",
-            placeholder="Enter custom search query...",
-            type="text",
-            className="form-control-lg mb-3"  # Larger input box
+        search_mode = "custom"
+        input_box = dbc.InputGroup(
+            [
+                dbc.Input(
+                    id="custom-search-query-input",
+                    placeholder="Enter custom search query...",
+                    type="text",
+                    # Added dark theme classes
+                    className="form-control-lg bg-dark text-light border-secondary"
+                ),
+                dbc.Button(
+                    # Search icon
+                    [html.I(className="fa-solid fa-magnifying-glass me-2"), "Search"],
+                    id="apply-custom-search",
+                    color="primary",
+                    className="btn-lg"  # Ensure button is same size as input
+                )
+            ],
+            className="mb-3"  # Margin for the whole input group
         )
         time_disabled = True
         time_value = None  # Set to None to clear/grey out
@@ -358,11 +432,215 @@ def handle_search_mode(custom_clicks, default_clicks):
         category_value = None  # Set to None to clear/grey out
     elif triggered_id == "default-search-button":
         # Nothing to do, default state already set
-        pass
+        search_mode = "default"
 
-    return input_box, time_disabled, time_value, category_disabled, category_value, offcanvas_open
+    return input_box, time_disabled, time_value, category_disabled, category_value, offcanvas_open, search_mode
 
 
+@app.callback(
+    Output("custom-search-output", "children"),
+    Output("last-searched-query-store", "data"),
+    Output('keyword-table', 'data'),
+    Output('sentiment-line-graph', 'figure'),
+    Output('sentiment-pie-chart', 'figure'),
+    Output('news-bar', 'children'),
+    Input("apply-custom-search", "n_clicks"),
+    State("custom-search-query-input", "value"),
+    # Input: Get the last stored query
+    State("last-searched-query-store", "data"),
+    prevent_initial_call=True,
+    running=[(Output("apply-custom-search", "disabled"), True, False)]
+)
+def perform_custom_search(n_clicks, current_search_query, last_searched_query):
+    # Ensure n_clicks is not None (first load scenario) and remove leading/trailing whitespace
+    if n_clicks is None:
+        raise dash.exceptions.PreventUpdate
+
+    cleaned_current_query = current_search_query.strip() if current_search_query else ''
+
+    if cleaned_current_query and cleaned_current_query != last_searched_query:
+        # Perform search action
+
+        search_message = html.Div(
+            dbc.Alert(f"Searching for: '{cleaned_current_query}'...",
+                      color="success", className="mt-3"),
+            style={'text-align': 'center'}
+        )
+
+        dates, sentiments, pie_data, top_headlines = get_data(
+            cleaned_current_query)
+        df_line = pd.DataFrame({
+            "Timestamp": dates,
+            "Sentiment Score": sentiments
+        })
+
+        df_line["Timestamp"] = pd.to_datetime(df_line["Timestamp"])
+
+        fig_line = px.line(df_line, x="Timestamp", y="Sentiment Score", title="Overall Sentiment Trend (Your Data)",
+                           markers=True, line_shape="linear")
+        fig_line.update_layout(hovermode="x unified", template="plotly_white")
+
+        df_pie = pd.DataFrame({
+            "Sentiment": ["Positive", "Neutral", "Negative"],
+            "Count": pie_data
+        })
+        fig_pie = px.pie(df_pie, names="Sentiment", values="Count", title="Sentiment Distribution",
+                         color_discrete_map={'Positive': '#28a745', 'Neutral': '#ffc107', 'Negative': '#dc3545'})
+        fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+        fig_pie.update_layout(showlegend=True)
+
+        news_elements = [create_news_item_component(
+            article['title'], article['link']) for article in top_headlines]
+
+        # Return the message and update the store with the new query
+        return search_message, cleaned_current_query, [], fig_line, fig_pie, news_elements
+    elif not cleaned_current_query:
+        # User pressed search with an empty input
+        search_message = html.Div(
+            dbc.Alert("Please enter a search query.",
+                      color="warning", className="mt-3"),
+            style={'text-align': 'center'}
+        )
+        # Do not update the store as no valid search was made
+        return search_message, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+    else:
+        # Query is the same as the last one, prevent update
+        search_message = html.Div(
+            dbc.Alert(f"'{cleaned_current_query}' was last searched. No new action.",
+                      color="info", className="mt-3"),
+            style={'text-align': 'center'}
+        )
+        # Return the "no new action" message but don't update the store's data
+        return search_message, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+
+@app.callback(
+    # allow_duplicate=True is important!
+    Output('news-bar', 'children', allow_duplicate=True),
+    # No other outputs for now, but you could add more for other dashboards if needed
+    Input("country-dropdown", "value"),
+    State("search-mode", "data"),  # Corrected ID: 'search-mode-store'
+    State("last-searched-query-store", "data"),
+    prevent_initial_call=True  # Prevents the callback from firing on app load
+)
+def top_news_in_country(selected_country_value, current_search_mode, last_searched_query):
+    # Ensure current_search_mode is not None (e.g., during very initial load if store hasn't populated)
+    if current_search_mode is None:
+        raise dash.exceptions.PreventUpdate
+
+    # Get country parameters
+    # Use .get() with a default to prevent KeyError if selected_country_value is unexpected
+    country_params = COUNTRY_CODES.get(
+        selected_country_value, COUNTRY_CODES['United States'])
+    hl = country_params['hl']
+    gl = country_params['gl']
+    ceid = country_params['ceid']
+
+    news_elements = []  # Initialize news_elements to an empty list
+
+    if current_search_mode == 'default':
+        # In default mode, get general top news for the selected country
+        url = f"https://news.google.com/rss?hl={hl}-{gl}&gl={gl}&ceid={ceid}"
+        # Debugging
+        print(
+            f"Fetching default news for {selected_country_value} from URL: {url}")
+        top_headlines = top_news(url)
+        news_elements = [create_news_item_component(
+            article['title'], article['link']) for article in top_headlines]
+
+    elif current_search_mode == 'custom':
+        # In custom mode, use the last searched query with the new country
+        if last_searched_query:  # Check if there's actually a query to search for
+            # Ensure the query is URL-encoded if it contains spaces or special characters
+            # requests.get will handle this mostly, but for constructing the URL,
+            # it's good practice to ensure it's clean for the 'q' parameter.
+            # However, Google News RSS often handles spaces naturally with just '+'
+            # Let's revert to last_searched_query directly for query part, as it's cleaner.
+            cleaned_input_for_url = last_searched_query.strip().replace(
+                ' ', '+')  # Replace spaces with '+'
+
+            url = f"https://news.google.com/rss/search?q={cleaned_input_for_url}&hl={hl}&gl={gl}&ceid={ceid}"
+            # Debugging
+            print(
+                f"Fetching custom news for '{last_searched_query}' in {selected_country_value} from URL: {url}")
+            top_headlines = top_news(url)
+            news_elements = [create_news_item_component(
+                article['title'], article['link']) for article in top_headlines]
+        else:
+            # If no last custom query exists, show a message
+            news_elements = html.Div(
+                dbc.Alert("No custom search query available. Please perform a custom search first.",
+                          color="info", className="mt-3"),
+                style={'text-align': 'center'}
+            )
+            print("No last custom query, showing message.")  # Debugging
+    else:
+        # This case should ideally not happen if search-mode-store is well-managed
+        news_elements = html.Div(
+            dbc.Alert("Unknown search mode. Please select Default or Custom search.",
+                      color="danger", className="mt-3"),
+            style={'text-align': 'center'}
+        )
+        # Debugging
+        print(f"Unknown search mode encountered: {current_search_mode}")
+
+    if not news_elements:  # If no news was fetched or an error occurred
+        news_elements = html.Div(
+            dbc.Alert("Could not fetch news for the selected country/query. Please try again.",
+                      color="warning", className="mt-3"),
+            style={'text-align': 'center'}
+        )
+
+    return news_elements
+
+
+# @app.callback(
+#     Output('news-bar', 'children', allow_duplicate=True),
+#     Input("country-dropdown", "value"),
+#     State("search-mode", "data"),
+#     State("last-searched-query-store", "data"),
+#    prevent_initial_call=True
+# )
+# def top_news_in_country(search_mode, country_val, last_searched):
+
+#     COUNTRY_CODES = {
+#         'United States': {'gl': 'US', 'hl': 'en', 'ceid': 'US:en'},
+#         'Canada': {'gl': 'CA', 'hl': 'en', 'ceid': 'CA:en'},
+#         'United Kingdom': {'gl': 'GB', 'hl': 'en', 'ceid': 'GB:en'},
+#         # English news from Germany
+#         'Germany': {'gl': 'DE', 'hl': 'en', 'ceid': 'DE:en'},
+#         'Australia': {'gl': 'AU', 'hl': 'en', 'ceid': 'AU:en'},
+#         # 5 Most Popular Countries added
+#         'India': {'gl': 'IN', 'hl': 'en', 'ceid': 'IN:en'},
+#         # English news from France
+#         'France_en': {'gl': 'FR', 'hl': 'en', 'ceid': 'FR:en'},
+#         # English news from Japan
+#         'Japan_en': {'gl': 'JP', 'hl': 'en', 'ceid': 'JP:en'},
+#         # English news from Brazil
+#         'Brazil_en': {'gl': 'BR', 'hl': 'en', 'ceid': 'BR:en'},
+#         # English news from China
+#         'China_en': {'gl': 'CN', 'hl': 'en', 'ceid': 'CN:en'},
+#         # Countries you specifically asked about
+#         'Nigeria': {'gl': 'NG', 'hl': 'en', 'ceid': 'NG:en'},
+#         'Netherlands_en': {'gl': 'NL', 'hl': 'en', 'ceid': 'NL:en'},
+#         # Dutch news for Netherlands
+#         'Netherlands_nl': {'gl': 'NL', 'hl': 'nl', 'ceid': 'NL:nl'},
+#         'Zambia': {'gl': 'ZM', 'hl': 'en', 'ceid': 'ZM:en'},
+#     }
+#     hl = COUNTRY_CODES[country_val]['hl']
+#     gl = COUNTRY_CODES[country_val]['gl']
+#     ceid = COUNTRY_CODES[country_val]['ceid']
+#     if search_mode == 'default':
+#         url = f"https://news.google.com/rss?hl={hl}&gl={gl}&ceid={ceid}"
+#     else:
+#         cleaned_input = last_searched.split()
+#         cleaned_input = ''.join(cleaned_input)
+
+#         url = f"https://news.google.com/rss/search?q={cleaned_input}&hl={hl}&gl={gl}&ceid={ceid}"
+#     top_headlines = top_news(url)
+#     news_elements = [create_news_item_component(
+#         article['title'], article['link']) for article in top_headlines]
+#     return news_elements
 # --- 5. Run the App ---
 if __name__ == '__main__':
     app.run(debug=True)

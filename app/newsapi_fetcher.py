@@ -51,6 +51,7 @@ async def get_news():
 
             data_json = response.json()
             return extract_data(data_json)
+            # return data_json
         except BaseException as e:
             print(e)
             return {}
