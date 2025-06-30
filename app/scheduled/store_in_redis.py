@@ -62,7 +62,7 @@ if __name__ == "__main__":
         REDIS_URL = os.getenv("REDIS_URL")
         print(REDIS_URL)
         client = redis.from_url(REDIS_URL, decode_responses=True)
-        x = await client.get("headline_news")
+        x = await client.get("monthly_summary")
         print(x)
 
     asyncio.run(test())

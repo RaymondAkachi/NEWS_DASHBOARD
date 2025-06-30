@@ -33,7 +33,7 @@ async def get_daily_avg_sentiment(days: int = 30, category: str | None = None) -
         rows = result.all()
 
     # Build a date → average map
-    return {row.day.isoformat(): float(row.avg_sentiment) for row in rows}
+    return {row.day.strftime("%Y-%m-%d %H:%M:%S"): float(row.avg_sentiment) for row in rows}
 
 if __name__ == "__main__":
     # Overall last-month sentiment

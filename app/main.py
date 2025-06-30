@@ -10,6 +10,8 @@ import pandas as pd
 import numpy as np  # For random data in line graph
 from urllib.parse import urlparse
 from datetime import date, timedelta
+import json
+from datetime import datetime
 
 from .get_custom_data import get_data, top_news
 
@@ -23,12 +25,12 @@ client = Redis.from_url(REDIS_URL, decode_responses=True)
 # --- 1. Prepare Dummy Data (Same as before) ---
 # Dropdown Options
 time_options = [
-    {'label': 'Month', 'value': 'month'},
-    {'label': 'Week', 'value': 'week'}
+    {'label': 'Month', 'value': 'monthly'},
+    {'label': 'Week', 'value': 'weekly'}
 ]
 
 category_options = [
-    {'label': 'None', 'value': 'none'},
+    {'label': 'None', 'value': 'summary'},
     {'label': 'Business', 'value': 'business'},
     {'label': 'World', 'value': 'world'},
     {'label': 'Sports', 'value': 'sports'},
@@ -83,25 +85,41 @@ COUNTRY_CODES = {
     'Zambia': {'gl': 'ZM', 'hl': 'en', 'ceid': 'ZM:en'},
 }
 
+
+data = client.get("monthly_summary")
+data = json.loads(data)
+
 # Dummy Data for Line Graph
+line_graph = data['line_graph']
+# timestamps = line_graph.keys()
+timestamps = [datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+              for ts_str in line_graph.keys()]
+sentiments = list(line_graph.values())
 df_line = pd.DataFrame({
-    "Date": pd.to_datetime(pd.date_range(start="2025-05-27", periods=30, freq="D")),
-    "Sentiment Score": [
-        float(f"{x:.2f}") for x in (
-            (pd.Series(range(30)) * 0.1) +
-            (pd.Series(np.random.rand(30)) * 0.5) +
-            (np.sin(np.linspace(0, 4 * np.pi, 30)) * 0.8) + 0.5
-        )
-    ]
+    "Timestamp": timestamps,
+    "Sentiment Score": sentiments
 })
-fig_line = px.line(df_line, x="Date", y="Sentiment Score", title="Overall Sentiment Trend",
+
+# df_line['Timestamp'] = df_line['Timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+# df_line['Timestamp'] = df_line['Timestamp']
+
+df = df_line.sort_values(by="Timestamp")
+fig_line = px.line(df_line, x="Timestamp", y="Sentiment Score", title="Overall Sentiment Trend",
                    markers=True, line_shape="linear")
-fig_line.update_layout(hovermode="x unified", template="plotly_white")
+fig_line.update_layout(hovermode="x unified", template="plotly_white",
+                       xaxis_rangeslider_visible=True)
 
 # Dummy Data for Pie Chart
+pie_chart = data['pie_chart']
+total = 0
+pie_data = [pie_chart['good'], pie_chart['okay'], pie_chart['bad']]
+for i in pie_data:
+    total += i
+pie_data = [x / total * 100 for x in pie_data]
+pie_data = [int(round(x)) for x in pie_data]
 df_pie = pd.DataFrame({
     "Sentiment": ["Positive", "Neutral", "Negative"],
-    "Count": [45, 30, 25]
+    "Count": pie_data
 })
 fig_pie = px.pie(df_pie, names="Sentiment", values="Count", title="Sentiment Distribution",
                  color_discrete_map={'Positive': '#28a745', 'Neutral': '#ffc107', 'Negative': '#dc3545'})
@@ -109,33 +127,45 @@ fig_pie.update_traces(textposition='inside', textinfo='percent+label')
 fig_pie.update_layout(showlegend=True)
 
 # Dummy Data for Table
+top_sources = data['top_sources']
+sources = []
+article_counts = []
+avg_sentiments = []
+
+for i in top_sources:
+    sources.append(i['source'])
+    article_counts.append(i['article_count'])
+    avg_sentiments.append(i['avg_sentiment'])
+
 df_table = pd.DataFrame({
-    "Keyword": ["Inflation", "AI", "Elections", "Climate", "Healthcare"],
-    "Mentions": [1500, 1200, 900, 750, 600],
-    "Avg. Sentiment": [0.65, 0.72, 0.45, 0.58, 0.61]
+    "Sources": sources,
+    "Art. Count": article_counts,
+    "Avg. Sentiment": avg_sentiments
 })
 
 # Dummy News Articles for Scrollable Feed
-news_articles = [
-    {"title": "Tech Giant Unveils New AI Processor",
-        "link": "https://www.verylongexample.com/ai-innovation/tech-giant-unveils-revolutionary-new-artificial-intelligence-processor-details.html"},
-    {"title": "Global Markets React to Interest Rate Hike",
-        "link": "https://www.financeworldnews.org/economy/global-markets-show-mixed-reactions-to-recent-central-bank-interest-rate-hike-analysis.html"},
-    {"title": "Breakthrough in Renewable Energy Storage",
-        "link": "https://www.greenenergynow.net/research/new-breakthrough-in-long-duration-renewable-energy-storage-technology-paving-the-way.html"},
-    {"title": "Local Charity Exceeds Fundraising Goal",
-        "link": "https://www.communityvoice.com/local-updates/local-charity-campaign-exceeds-fundraising-goal-thanks-to-overwhelming-community-support.html"},
-    {"title": "New Study on Climate Change Impacts",
-        "link": "https://www.environmentalsciencejournal.org/climate-research/comprehensive-new-study-highlights-severe-climate-change-impacts-globally.html"},
-    {"title": "Startup Secures Series B Funding Round",
-        "link": "https://www.startupinsights.co/funding/promising-fintech-startup-secures-oversubscribed-series-b-funding-round-for-expansion.html"},
-    {"title": "Major Sports Event Kicks Off This Weekend",
-        "link": "https://www.sportseverywhere.com/events/annual-international-sports-tournament-kicks-off-this-weekend-full-schedule-and-athlete-profiles.html"},
-    {"title": "Health Organization Issues New Guidelines",
-        "link": "https://www.healthnewsdaily.org/public-health/major-health-organization-issues-new-public-health-guidelines-for-seasonal-illnesses.html"},
-    {"title": "Cultural Festival Draws Record Crowds",
-        "link": "https://www.artsculturemagazine.com/festival-reviews/annual-cultural-arts-festival-draws-record-breaking-crowds-and-acclaim.html"},
-]
+news_articles = top_news(
+    "https://news.google.com/rss?hl=en-US&gl=NG&ceid=US:en")
+# news_articles = [
+#     {"title": "Tech Giant Unveils New AI Processor",
+#         "link": "https://www.verylongexample.com/ai-innovation/tech-giant-unveils-revolutionary-new-artificial-intelligence-processor-details.html"},
+#     {"title": "Global Markets React to Interest Rate Hike",
+#         "link": "https://www.financeworldnews.org/economy/global-markets-show-mixed-reactions-to-recent-central-bank-interest-rate-hike-analysis.html"},
+#     {"title": "Breakthrough in Renewable Energy Storage",
+#         "link": "https://www.greenenergynow.net/research/new-breakthrough-in-long-duration-renewable-energy-storage-technology-paving-the-way.html"},
+#     {"title": "Local Charity Exceeds Fundraising Goal",
+#         "link": "https://www.communityvoice.com/local-updates/local-charity-campaign-exceeds-fundraising-goal-thanks-to-overwhelming-community-support.html"},
+#     {"title": "New Study on Climate Change Impacts",
+#         "link": "https://www.environmentalsciencejournal.org/climate-research/comprehensive-new-study-highlights-severe-climate-change-impacts-globally.html"},
+#     {"title": "Startup Secures Series B Funding Round",
+#         "link": "https://www.startupinsights.co/funding/promising-fintech-startup-secures-oversubscribed-series-b-funding-round-for-expansion.html"},
+#     {"title": "Major Sports Event Kicks Off This Weekend",
+#         "link": "https://www.sportseverywhere.com/events/annual-international-sports-tournament-kicks-off-this-weekend-full-schedule-and-athlete-profiles.html"},
+#     {"title": "Health Organization Issues New Guidelines",
+#         "link": "https://www.healthnewsdaily.org/public-health/major-health-organization-issues-new-public-health-guidelines-for-seasonal-illnesses.html"},
+#     {"title": "Cultural Festival Draws Record Crowds",
+#         "link": "https://www.artsculturemagazine.com/festival-reviews/annual-cultural-arts-festival-draws-record-breaking-crowds-and-acclaim.html"},
+# ]
 
 # Function to create a news item div (same as before)
 
@@ -159,7 +189,7 @@ news_elements = [create_news_item_component(
 
 
 # --- 2. Initialize Dash App ---
-app = dash.Dash(__name__, external_stylesheets=[
+app = dash.Dash(__name__, suppress_callback_exceptions=True, external_stylesheets=[
                 dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME])
 # Added dbc.icons.FONT_AWESOME for a potential settings icon on the button
 
@@ -213,7 +243,7 @@ app.layout = dbc.Container([
                 dcc.Dropdown(
                     id='time-dropdown',
                     options=time_options,
-                    value='month',
+                    value='monthly',
                     clearable=False,
                     className="mb-3"
                 )
@@ -227,7 +257,7 @@ app.layout = dbc.Container([
                 dcc.Dropdown(
                     id='category-dropdown',
                     options=category_options,
-                    value='none',
+                    value='summary',
                     clearable=False,
                     className="mb-3"
                 )
@@ -375,66 +405,263 @@ def toggle_offcanvas(n_clicks, is_open):
 @app.callback(
     # To add/remove the input box
     Output("custom-search-input-container", "children"),
-    Output("time-dropdown", "disabled"),  # To disable/enable the time dropdown
-    Output("time-dropdown", "value"),  # To reset its value
-    # To disable/enable the category dropdown
+    Output("time-dropdown", "disabled"),
+    Output("time-dropdown", "value"),
     Output("category-dropdown", "disabled"),
-    Output("category-dropdown", "value"),  # To reset its value
-    Output("offcanvas-search-options", "is_open",
-           allow_duplicate=True),  # To close offcanvas
+    Output("category-dropdown", "value"),
+    Output("offcanvas-search-options", "is_open", allow_duplicate=True),
+    # Corrected ID to match previous advice
     Output("search-mode", "data"),
+    # Allow_duplicate needed if other callbacks also target this
+    Output("custom-search-output", "children", allow_duplicate=True),
     Input("custom-search-button", "n_clicks"),
-    Input("default-search-button", "n_clicks"),
-    State("search-mode", "data"),
-    # Use State to know if a click occurred, but not trigger on initial load for these
-    # States for dropdowns not needed as we just reset them
     prevent_initial_call=True
 )
-def handle_search_mode(custom_clicks, default_clicks, search_mode):
-    ctx = dash.callback_context
-    if not ctx.triggered_id:
+def handle_custom_search_button(n_clicks):
+    if n_clicks is None:
         raise dash.exceptions.PreventUpdate
 
-    triggered_id = ctx.triggered_id
+    # Show custom input box
+    input_box = dbc.InputGroup(
+        [
+            dbc.Input(
+                id="custom-search-query-input",
+                placeholder="Enter custom search query...",
+                type="text",
+                className="form-control-lg bg-dark text-light border-secondary"
+            ),
+            dbc.Button(
+                [html.I(className="fa-solid fa-magnifying-glass me-2"), "Search"],
+                id="apply-custom-search",
+                color="primary",
+                className="btn-lg"
+            )
+        ],
+        className="mb-3"
+    )
 
-    # Default state: no custom input, dropdowns enabled and default values
-    input_box = None
+    # Disable and clear dropdowns
+    time_disabled = True
+    time_value = None
+    category_disabled = True
+    category_value = None
+
+    offcanvas_open = False  # Close offcanvas
+
+    search_mode = "custom"  # Set search mode
+
+    # Reset/clear the output area that might have old search results
+    custom_search_output_children = None  # Or html.Div() if you prefer an empty div
+
+    return (
+        input_box,
+        time_disabled,
+        time_value,
+        category_disabled,
+        category_value,
+        offcanvas_open,
+        search_mode,
+        custom_search_output_children
+    )
+
+
+@app.callback(
+    # Allow_duplicate if custom search also targets it
+    Output("custom-search-input-container", "children", allow_duplicate=True),
+    Output("time-dropdown", "disabled", allow_duplicate=True),
+    Output("time-dropdown", "value", allow_duplicate=True),
+    Output("category-dropdown", "disabled", allow_duplicate=True),
+    Output("category-dropdown", "value", allow_duplicate=True),
+    Output("offcanvas-search-options", "is_open", allow_duplicate=True),
+    # Corrected ID and allow_duplicate
+    Output("search-mode", "data", allow_duplicate=True),
+    # Allow_duplicate needed if other callbacks also target this
+    Output("custom-search-output", "children", allow_duplicate=True),
+
+    # Set data charts back to normal
+    Output('keyword-table', 'data', allow_duplicate=True),
+    Output('sentiment-line-graph', 'figure', allow_duplicate=True),
+    Output('sentiment-pie-chart', 'figure', allow_duplicate=True),
+    Output('news-bar', 'children', allow_duplicate=True),
+    Input("default-search-button", "n_clicks"),
+    State('search-mode', 'data'),
+    prevent_initial_call=True
+)
+def handle_default_search_button(n_clicks, search_mode):
+    if n_clicks is None:
+        raise dash.exceptions.PreventUpdate
+
+    # Hide custom input box
+    input_box = None  # Remove the input group
+
+    # Enable and reset dropdowns
     time_disabled = False
-    time_value = 'month'
+    time_value = 'month'  # Default value
     category_disabled = False
-    category_value = 'none'
-    offcanvas_open = False  # Close offcanvas after selection
+    category_value = 'none'  # Default value
 
-    if triggered_id == "custom-search-button":
-        search_mode = "custom"
-        input_box = dbc.InputGroup(
-            [
-                dbc.Input(
-                    id="custom-search-query-input",
-                    placeholder="Enter custom search query...",
-                    type="text",
-                    # Added dark theme classes
-                    className="form-control-lg bg-dark text-light border-secondary"
-                ),
-                dbc.Button(
-                    # Search icon
-                    [html.I(className="fa-solid fa-magnifying-glass me-2"), "Search"],
-                    id="apply-custom-search",
-                    color="primary",
-                    className="btn-lg"  # Ensure button is same size as input
-                )
-            ],
-            className="mb-3"  # Margin for the whole input group
-        )
-        time_disabled = True
-        time_value = None  # Set to None to clear/grey out
-        category_disabled = True
-        category_value = None  # Set to None to clear/grey out
-    elif triggered_id == "default-search-button":
-        # Nothing to do, default state already set
-        search_mode = "default"
+    offcanvas_open = False  # Close offcanvas
 
-    return input_box, time_disabled, time_value, category_disabled, category_value, offcanvas_open, search_mode
+    # Clear any previous custom search output if it exists
+    custom_search_output_children = None  # Or html.Div()
+
+    if search_mode == "custom":
+        data = client.get("monthly_summary")
+        print(data, "Hello")
+        data = json.loads(data)
+
+        # Dummy Data for Line Graph
+        line_graph = data['line_graph']
+        # timestamps = line_graph.keys()
+        timestamps = [datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+                      for ts_str in line_graph.keys()]
+        sentiments = list(line_graph.values())
+        df_line = pd.DataFrame({
+            "Timestamp": timestamps,
+            "Sentiment Score": sentiments
+        })
+
+        df = df_line.sort_values(by="Timestamp")
+        fig_line = px.line(df, x="Timestamp", y="Sentiment Score", title="Overall Sentiment Trend",
+                           markers=True, line_shape="linear")
+        fig_line.update_layout(hovermode="x unified", template="plotly_white",
+                               xaxis_rangeslider_visible=True)
+
+        # Dummy Data for Pie Chart
+        pie_chart = data['pie_chart']
+        total = 0
+        pie_data = [pie_chart['good'], pie_chart['okay'], pie_chart['bad']]
+        for i in pie_data:
+            total += i
+        pie_data = [x / total * 100 for x in pie_data]
+        pie_data = [int(round(x)) for x in pie_data]
+        df_pie = pd.DataFrame({
+            "Sentiment": ["Positive", "Neutral", "Negative"],
+            "Count": pie_data
+        })
+        fig_pie = px.pie(df_pie, names="Sentiment", values="Count", title="Sentiment Distribution",
+                         color_discrete_map={'Positive': '#28a745', 'Neutral': '#ffc107', 'Negative': '#dc3545'})
+        fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+        fig_pie.update_layout(showlegend=True)
+
+        # Dummy Data for Table
+        top_sources = data['top_sources']
+        sources = []
+        article_counts = []
+        avg_sentiments = []
+
+        for i in top_sources:
+            sources.append(i['source'])
+            article_counts.append(i['article_count'])
+            avg_sentiments.append(i['avg_sentiment'])
+
+        df_table = pd.DataFrame({
+            "Sources": sources,
+            "Art. Count": article_counts,
+            "Avg. Sentiment": avg_sentiments
+        })
+
+        df_table_json = df_table.to_dict('records')
+        # Dummy News Articles for Scrollable Feed
+        news_articles = top_news(
+            "https://news.google.com/rss?hl=en-US&gl=NG&ceid=US:en")
+
+        news_elements = [create_news_item_component(
+            article['title'], article['link']) for article in news_articles]
+
+    else:
+        df_table_json = dash.no_update
+        fig_line = dash.no_update
+        fig_pie = dash.no_update
+        news_elements = dash.no_update
+
+    search_mode = "default"  # Set search mode
+
+    return (
+        input_box,
+        time_disabled,
+        time_value,
+        category_disabled,
+        category_value,
+        offcanvas_open,
+        search_mode,
+        custom_search_output_children,
+        df_table_json,
+        fig_line,
+        fig_pie,
+        news_elements
+    )
+
+
+# @app.callback(
+#     # To add/remove the input box
+#     Output("custom-search-output", "children"),
+#     Output("custom-search-input-container", "children"),
+#     Output("time-dropdown", "disabled"),  # To disable/enable the time dropdown
+#     Output("time-dropdown", "value"),  # To reset its value
+#     # To disable/enable the category dropdown
+#     Output("category-dropdown", "disabled"),
+#     Output("category-dropdown", "value"),  # To reset its value
+#     Output("offcanvas-search-options", "is_open",
+#            allow_duplicate=True),  # To close offcanvas
+#     Output("search-mode", "data"),
+#     Input("custom-search-button", "n_clicks"),
+#     Input("default-search-button", "n_clicks"),
+#     State("search-mode", "data"),
+#     # Use State to know if a click occurred, but not trigger on initial load for these
+#     # States for dropdowns not needed as we just reset them
+#     prevent_initial_call=True
+# )
+# def handle_search_mode(custom_clicks, default_clicks, search_mode):
+#     ctx = dash.callback_context
+#     if not ctx.triggered_id:
+#         raise dash.exceptions.PreventUpdate
+
+#     triggered_id = ctx.triggered_id
+
+#     # Default state: no custom input, dropdowns enabled and default values
+#     input_box = None
+#     time_disabled = False
+#     time_value = 'month'
+#     category_disabled = False
+#     category_value = 'none'
+#     offcanvas_open = False  # Close offcanvas after selection
+
+#     if triggered_id == "custom-search-button":
+#         search_mode = "custom"
+#         input_box = dbc.InputGroup(
+#             [
+#                 dbc.Input(
+#                     id="custom-search-query-input",
+#                     placeholder="Enter custom search query...",
+#                     type="text",
+#                     # Added dark theme classes
+#                     className="form-control-lg bg-dark text-light border-secondary"
+#                 ),
+#                 dbc.Button(
+#                     # Search icon
+#                     [html.I(className="fa-solid fa-magnifying-glass me-2"), "Search"],
+#                     id="apply-custom-search",
+#                     color="primary",
+#                     className="btn-lg"  # Ensure button is same size as input
+#                 )
+#             ],
+#             className="mb-3"  # Margin for the whole input group
+#         )
+#         time_disabled = True
+#         time_value = None  # Set to None to clear/grey out
+#         category_disabled = True
+#         category_value = None  # Set to None to clear/grey out
+#         search_output = dash.no_update
+#     elif triggered_id == "default-search-button":
+#         # Nothing to do, default state already set
+#         if search_mode == "default":
+#             pass
+#         input_box = None
+#         search_output = None
+#         search_mode = "default"
+
+#     return search_output, input_box, time_disabled, time_value, category_disabled, category_value, offcanvas_open, search_mode
 
 
 @app.callback(
@@ -444,6 +671,7 @@ def handle_search_mode(custom_clicks, default_clicks, search_mode):
     Output('sentiment-line-graph', 'figure'),
     Output('sentiment-pie-chart', 'figure'),
     Output('news-bar', 'children'),
+    Output("country-dropdown", "value"),
     Input("apply-custom-search", "n_clicks"),
     State("custom-search-query-input", "value"),
     # Input: Get the last stored query
@@ -493,7 +721,7 @@ def perform_custom_search(n_clicks, current_search_query, last_searched_query):
             article['title'], article['link']) for article in top_headlines]
 
         # Return the message and update the store with the new query
-        return search_message, cleaned_current_query, [], fig_line, fig_pie, news_elements
+        return search_message, cleaned_current_query, [], fig_line, fig_pie, news_elements, "United States"
     elif not cleaned_current_query:
         # User pressed search with an empty input
         search_message = html.Div(
@@ -502,7 +730,7 @@ def perform_custom_search(n_clicks, current_search_query, last_searched_query):
             style={'text-align': 'center'}
         )
         # Do not update the store as no valid search was made
-        return search_message, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+        return search_message, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
     else:
         # Query is the same as the last one, prevent update
         search_message = html.Div(
@@ -511,7 +739,7 @@ def perform_custom_search(n_clicks, current_search_query, last_searched_query):
             style={'text-align': 'center'}
         )
         # Return the "no new action" message but don't update the store's data
-        return search_message, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+        return search_message, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
 
 @app.callback(
@@ -594,6 +822,111 @@ def top_news_in_country(selected_country_value, current_search_mode, last_search
     return news_elements
 
 
+@app.callback(
+    Output('keyword-table', 'data', allow_duplicate=True),
+    Output('sentiment-line-graph', 'figure', allow_duplicate=True),
+    Output('sentiment-pie-chart', 'figure', allow_duplicate=True),
+    Output('news-bar', 'children', allow_duplicate=True),
+
+    Input('time-dropdown', 'value'),
+    Input('category-dropdown', 'value'),
+    State("country-dropdown", "value"),
+    prevent_initial_call=True
+)
+def time_and_cat_sort(selected_time_value, selected_category_value, selected_country):
+    # This callback should ONLY run when in 'default' search mode
+    # It must also be prevented if triggered while in 'custom' mode.
+
+    # Handle initial None values if dropdowns can start empty
+    # If your dropdowns always have a default value, this check might be less critical.
+    if selected_time_value is None or selected_category_value is None:
+        print("Time or Category dropdown value is None, preventing update.")
+        raise dash.exceptions.PreventUpdate
+
+    redis_key = f"{selected_time_value}_{selected_category_value}"
+    data = client.get(redis_key)
+
+    data = json.loads(data)
+
+    # Dummy Data for Line Graph
+    line_graph = data['line_graph']
+    # timestamps = line_graph.keys()
+    timestamps = [datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+                  for ts_str in line_graph.keys()]
+    sentiments = list(line_graph.values())
+    df_line = pd.DataFrame({
+        "Timestamp": timestamps,
+        "Sentiment Score": sentiments
+    })
+
+    df = df_line.sort_values(by="Timestamp")
+    fig_line = px.line(df, x="Timestamp", y="Sentiment Score", title="Overall Sentiment Trend",
+                       markers=True, line_shape="linear")
+    fig_line.update_layout(hovermode="x unified", template="plotly_white",
+                           xaxis_rangeslider_visible=True)
+
+    # Dummy Data for Pie Chart
+    pie_chart = data['pie_chart']
+    total = 0
+    pie_data = [pie_chart['good'], pie_chart['okay'], pie_chart['bad']]
+    for i in pie_data:
+        total += i
+    pie_data = [x / total * 100 for x in pie_data]
+    pie_data = [int(round(x)) for x in pie_data]
+    df_pie = pd.DataFrame({
+        "Sentiment": ["Positive", "Neutral", "Negative"],
+        "Count": pie_data
+    })
+    fig_pie = px.pie(df_pie, names="Sentiment", values="Count", title="Sentiment Distribution",
+                     color_discrete_map={'Positive': '#28a745', 'Neutral': '#ffc107', 'Negative': '#dc3545'})
+    fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+    fig_pie.update_layout(showlegend=True)
+
+    # Dummy Data for Table
+    top_sources = data['top_sources']
+    sources = []
+    article_counts = []
+    avg_sentiments = []
+
+    for i in top_sources:
+        sources.append(i['source'])
+        article_counts.append(i['article_count'])
+        avg_sentiments.append(i['avg_sentiment'])
+
+    df_table = pd.DataFrame({
+        "Sources": sources,
+        "Art. Count": article_counts,
+        "Avg. Sentiment": avg_sentiments
+    })
+
+    df_table_json = df_table.to_dict('records')
+    # Dummy News Articles for Scrollable Feed
+
+    country_params = COUNTRY_CODES.get(
+        selected_country, COUNTRY_CODES['United States'])
+    hl = country_params['hl']
+    gl = country_params['gl']
+    ceid = country_params['ceid']
+
+    url = f"https://news.google.com/rss/search?q={selected_category_value}&hl={hl}-{gl}&gl={gl}&ceid={ceid}"
+    if selected_category_value == "summary":
+        url = f"https://news.google.com/rss?hl={hl}-{gl}&gl={gl}&ceid={ceid}"
+
+    news_articles = top_news(url)
+    news_elements = [create_news_item_component(
+        article['title'], article['link']) for article in news_articles]
+
+    return (
+        df_table_json,
+        fig_line,
+        fig_pie,
+        news_elements
+    )
+
+
+# Run the App
+if __name__ == '__main__':
+    app.run(debug=True)
 # @app.callback(
 #     Output('news-bar', 'children', allow_duplicate=True),
 #     Input("country-dropdown", "value"),
@@ -642,8 +975,6 @@ def top_news_in_country(selected_country_value, current_search_mode, last_search
 #         article['title'], article['link']) for article in top_headlines]
 #     return news_elements
 # --- 5. Run the App ---
-if __name__ == '__main__':
-    app.run(debug=True)
 # from dash import Dash, html, dcc, Input, Output, callback
 # import pandas as pd
 # import plotly.express as px

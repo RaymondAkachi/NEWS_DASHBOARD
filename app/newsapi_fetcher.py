@@ -33,7 +33,10 @@ def extract_data(json_data: dict) -> dict:
             return ""
 
         source_ids.append(safe_join(article.get("source_id")))
-        decscriptions.append(safe_join(article.get("description")))
+        if not article.get("description"):
+            decscriptions.append(safe_join(article.get("title")))
+        else:
+            decscriptions.append(safe_join(article.get("description")))
         titles.append(safe_join(article.get("title")))
         links.append(safe_join(article.get("link")))
         countries.append(safe_join(article.get("country")))
