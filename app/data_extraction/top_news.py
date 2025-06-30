@@ -12,7 +12,7 @@ async def get_news_headlines(sector=None | str):
     feed = feedparser.parse(link)
     top_headlines = []
 
-    for entry in feed.entries[:5]:  # Get top 5
+    for entry in feed.entries[:10]:  # Get top 5
         top_headlines.append({
             "title": entry.title,
             "link": entry.link,

@@ -4,6 +4,7 @@ import requests
 import feedparser
 from app.models.sentiment import analyze_sentiment
 
+
 load_dotenv('app\\.env')
 NEWSAPI_KEY = os.getenv("NEWS_API_KEY")
 print(NEWSAPI_KEY)
@@ -66,7 +67,7 @@ def get_data(input: str):
     feed = feedparser.parse(link)
     top_headlines = []
 
-    for entry in feed.entries[:5]:  # Get top 5
+    for entry in feed.entries[:10]:  # Get top 5
         top_headlines.append({
             "title": entry.title,
             "link": entry.link,
@@ -78,12 +79,14 @@ def top_news(url):
     feed = feedparser.parse(url)
     top_headlines = []
 
-    for entry in feed.entries[:5]:  # Get top 5
+    for entry in feed.entries[:10]:  # Get top 5
         top_headlines.append({
             "title": entry.title,
             "link": entry.link,
         })
     return top_headlines
+
+
 # a, b, c, d = get_data("Iran")
 # print(a, '\n', b, '\n', c, '\n', d)
 # Data needed for line graph

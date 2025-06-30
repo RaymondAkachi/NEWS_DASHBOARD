@@ -483,6 +483,10 @@ def handle_custom_search_button(n_clicks):
     Output('sentiment-line-graph', 'figure', allow_duplicate=True),
     Output('sentiment-pie-chart', 'figure', allow_duplicate=True),
     Output('news-bar', 'children', allow_duplicate=True),
+
+    # Output('category-dropdown', 'value', allow_duplicate=True),
+    # Output('time-dropdown', 'value', allow_duplicate=True),
+
     Input("default-search-button", "n_clicks"),
     State('search-mode', 'data'),
     prevent_initial_call=True
@@ -496,9 +500,9 @@ def handle_default_search_button(n_clicks, search_mode):
 
     # Enable and reset dropdowns
     time_disabled = False
-    time_value = 'month'  # Default value
+    time_value = 'monthly'  # Default value
     category_disabled = False
-    category_value = 'none'  # Default value
+    category_value = 'summary'  # Default value
 
     offcanvas_open = False  # Close offcanvas
 
@@ -590,6 +594,8 @@ def handle_default_search_button(n_clicks, search_mode):
         fig_line,
         fig_pie,
         news_elements
+        # "monthly",
+        # "summary"
     )
 
 

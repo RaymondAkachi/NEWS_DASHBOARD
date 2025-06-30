@@ -32,7 +32,7 @@ async def get_top_sources_with_avg_sentiment(days: int = 30, category: str | Non
 
         stmt = stmt.group_by(NewsArticle.source_id) \
                    .order_by(func.count(NewsArticle.id).desc()) \
-                   .limit(5)
+                   .limit(10)
 
         result = await session.execute(stmt)
         top_sources = result.all()

@@ -56,13 +56,13 @@ async def store_data_in_redis():
 # To run directly
 if __name__ == "__main__":
     import asyncio
-    # asyncio.run(store_data_in_redis())
+    asyncio.run(store_data_in_redis())
 
-    async def test():
-        REDIS_URL = os.getenv("REDIS_URL")
-        print(REDIS_URL)
-        client = redis.from_url(REDIS_URL, decode_responses=True)
-        x = await client.get("monthly_summary")
-        print(x)
+    # async def test():
+    #     REDIS_URL = os.getenv("REDIS_URL")
+    #     print(REDIS_URL)
+    #     client = redis.from_url(REDIS_URL, decode_responses=True)
+    #     x = await client.get("monthly_summary")
+    #     print(x)
 
-    asyncio.run(test())
+    # asyncio.run(test())
