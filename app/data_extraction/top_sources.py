@@ -48,5 +48,5 @@ async def get_top_sources_with_avg_sentiment(days: int = 30, category: str | Non
 
 if __name__ == "__main__":
     x = asyncio.run(get_top_sources_with_avg_sentiment(
-        days=30, category="Business"))
+        days=30))
     print(x)

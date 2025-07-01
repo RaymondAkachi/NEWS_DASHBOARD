@@ -16,11 +16,17 @@ import asyncio
 
 from .get_custom_data import get_data, top_news
 from .scheduler import main
+from pathlib import Path  # Import Path
 
+# ... (other imports) ...
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv('app\\.env')
-REDIS_URL = os.getenv("REDIS_URL")
+dotenv_path = BASE_DIR / 'app' / '.env'
+
+load_dotenv(dotenv_path)
 NEWS_API = os.getenv("NEWS_API_KEY")
+REDIS_URL = os.getenv("REDIS_URL")
+print(f"DEBUG: NEWSAPI_KEY loaded: {NEWS_API}")
 NEWS_URL = f"https://newsdata.io/api/1/latest?apikey={NEWS_API}&language=en&q=pizza"
 client = Redis.from_url(REDIS_URL, decode_responses=True)
 

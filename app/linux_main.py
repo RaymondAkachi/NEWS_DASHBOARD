@@ -1,7 +1,7 @@
 import dash
 from dash.dependencies import Input, Output, State, ALL
 import dash_bootstrap_components as dbc
-from dash import dcc, html, dash_table
+from dash import dcc, html, dash_table, no_update
 import plotly.express as px
 from redis import Redis
 import os
@@ -13,12 +13,17 @@ from datetime import date, timedelta
 import json
 from datetime import datetime
 import asyncio
+from pathlib import Path  # Import Path
 
 from .get_custom_data import get_data, top_news
 from .scheduler import main
 
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv('app\\.env')
+dotenv_path = BASE_DIR / 'app' / '.env'
+
+load_dotenv(dotenv_path)
+
 REDIS_URL = os.getenv("REDIS_URL")
 NEWS_API = os.getenv("NEWS_API_KEY")
 NEWS_URL = f"https://newsdata.io/api/1/latest?apikey={NEWS_API}&language=en&q=pizza"
@@ -87,9 +92,15 @@ COUNTRY_CODES = {
     'Zambia': {'gl': 'ZM', 'hl': 'en', 'ceid': 'ZM:en'},
 }
 
+try:
+    data = client.get("monthly_summary")
+    data = json.loads(data)
+except BaseException:
+    data = {"line_graph": {'2025-06-21 00:00:00': 0.32576, '2025-06-23 00:00:00': 0.020519999999999993, '2025-06-29 00:00:00': 0.07594000000000002, '2025-06-30 00:00:00': -0.04024000000000001},
+            "pie_chart": {'good': 26, 'okay': 46, 'bad': 18},
+            "top_sources": [{'source': 'si', 'article_count': 5, 'avg_sentiment': 0.0}, {'source': 'menafn', 'article_count': 5, 'avg_sentiment': 0.0945}, {'source': 'economictimes_indiatimes', 'article_count': 4, 'avg_sentiment': -0.1383}, {'source': 'google', 'article_count': 3, 'avg_sentiment': -0.0918}, {'source': 'yahoo', 'article_count': 2, 'avg_sentiment': 0.3298}, {'source': 'timesnownews', 'article_count': 2, 'avg_sentiment': 0.2014}, {'source': 'ibtimes', 'article_count': 2, 'avg_sentiment': 0.0174}, {'source': 'devdiscourse', 'article_count': 2, 'avg_sentiment': -0.2796}, {'source': '9news_au', 'article_count': 2, 'avg_sentiment': 0.8223}, {'source': 'unionleader', 'article_count': 2, 'avg_sentiment': 0.0}]
+            }
 
-data = client.get("monthly_summary")
-data = json.loads(data)
 
 # Dummy Data for Line Graph
 line_graph = data['line_graph']
@@ -204,6 +215,7 @@ app.layout = dbc.Container([
     # Storing needed values in browser session
     dcc.Store(id='last-searched-query-store', data=''),
     dcc.Store(id='search-mode', data='default'),
+    dcc.Store(id='search-status-store', data=None),
 
     # Row 1: Dashboard Title
     dbc.Row(
@@ -447,16 +459,17 @@ def handle_custom_search_button(n_clicks):
 
     # Disable and clear dropdowns
     time_disabled = True
-    time_value = None
+    time_value = "monthly"
     category_disabled = True
-    category_value = None
+    category_value = "summary"
 
     offcanvas_open = False  # Close offcanvas
 
     search_mode = "custom"  # Set search mode
 
     # Reset/clear the output area that might have old search results
-    custom_search_output_children = None  # Or html.Div() if you prefer an empty div
+    # Or html.Div() if you prefer an empty div
+    custom_search_output_children = html.Div()
 
     return (
         input_box,
@@ -676,6 +689,7 @@ def handle_default_search_button(n_clicks, search_mode):
 
 
 @app.callback(
+    # Output to hide/show loading message
     Output("custom-search-output", "children"),
     Output("last-searched-query-store", "data"),
     Output('keyword-table', 'data'),
@@ -683,38 +697,61 @@ def handle_default_search_button(n_clicks, search_mode):
     Output('sentiment-pie-chart', 'figure'),
     Output('news-bar', 'children'),
     Output("country-dropdown", "value"),
+    Output('search-status-store', 'data'),  # New output for status
+
     Input("apply-custom-search", "n_clicks"),
     State("custom-search-query-input", "value"),
-    # Input: Get the last stored query
     State("last-searched-query-store", "data"),
     prevent_initial_call=True,
-    running=[(Output("apply-custom-search", "disabled"), True, False)]
 )
 def perform_custom_search(n_clicks, current_search_query, last_searched_query):
-    # Ensure n_clicks is not None (first load scenario) and remove leading/trailing whitespace
     if n_clicks is None:
         raise dash.exceptions.PreventUpdate
 
     cleaned_current_query = current_search_query.strip() if current_search_query else ''
 
-    if cleaned_current_query and cleaned_current_query != last_searched_query:
-        # Perform search action
+    # Define default values for outputs to return if no update is needed or on error
+    # We use dash.no_update for outputs that shouldn't change
+    default_outputs = [
+        no_update,      # custom-search-output (handled by separate callback)
+        no_update,      # last-searched-query-store
+        no_update,      # keyword-table
+        no_update,      # sentiment-line-graph
+        no_update,      # sentiment-pie-chart
+        no_update,      # news-bar
+        no_update,      # country-dropdown
+        # search-status-store (always set to idle when this callback finishes)
+        'idle'
+    ]
 
-        search_message = html.Div(
-            dbc.Alert(f"Searching for: '{cleaned_current_query}'...",
-                      color="success", className="mt-3"),
-            style={'text-align': 'center'}
+    if not cleaned_current_query:
+        # User pressed search with an empty input
+        return (
+            dbc.Alert("Please enter a search query.",
+                      color="warning", className="mt-3"),
+            *default_outputs[1:]  # Unpack the rest of default_outputs
         )
+    elif cleaned_current_query == last_searched_query:
+        # Query is the same as the last one, prevent update for main data
+        return (
+            dbc.Alert(f"'{cleaned_current_query}' was last searched. No new action.",
+                      color="info", className="mt-3"),
+            *default_outputs[1:]
+        )
+    else:
+        # Perform search action
+        # The 'running' property will handle the "Searching..." message,
+        # so we don't return it directly from here when starting.
+        # This callback's job is just to return the final state.
 
         dates, sentiments, pie_data, top_headlines = get_data(
             cleaned_current_query)
+
         df_line = pd.DataFrame({
             "Timestamp": dates,
             "Sentiment Score": sentiments
         })
-
         df_line["Timestamp"] = pd.to_datetime(df_line["Timestamp"])
-
         fig_line = px.line(df_line, x="Timestamp", y="Sentiment Score", title="Overall Sentiment Trend (Your Data)",
                            markers=True, line_shape="linear")
         fig_line.update_layout(hovermode="x unified", template="plotly_white")
@@ -731,26 +768,59 @@ def perform_custom_search(n_clicks, current_search_query, last_searched_query):
         news_elements = [create_news_item_component(
             article['title'], article['link']) for article in top_headlines]
 
-        # Return the message and update the store with the new query
-        return search_message, cleaned_current_query, [], fig_line, fig_pie, news_elements, "United States"
-    elif not cleaned_current_query:
-        # User pressed search with an empty input
-        search_message = html.Div(
-            dbc.Alert("Please enter a search query.",
-                      color="warning", className="mt-3"),
+        # Return the actual data and update the store with the new query
+        return (
+            None,  # We'll clear this or provide a success message in a separate callback
+            cleaned_current_query,
+            [],  # keyword-table data, needs to be actual data, using [] as placeholder
+            fig_line,
+            fig_pie,
+            news_elements,
+            "United States",  # Reset country dropdown, or set to appropriate value
+            'success'  # Indicate success for the status store
+        )
+
+
+# NEW CALLBACK: For displaying the loading message and then clearing/changing it
+@app.callback(
+    Output("custom-search-output", "children", allow_duplicate=True),
+    Input("apply-custom-search", "n_clicks"),
+    State("custom-search-query-input", "value"),
+    prevent_initial_call=True,
+    running=[
+        (Output("custom-search-output", "children"), html.Div(
+            dbc.Alert(f"Searching...", color="info", className="mt-3"),
+            style={'text-align': 'center'}
+            # Show searching, then clear it (or you can set a success message here)
+        ), None),
+        (Output("apply-custom-search", "disabled"),
+         True, False),  # Disable button while running
+    ],
+)
+def display_searching_message(n_clicks, current_search_query):
+    # This callback only triggers the running state
+    # Its return value will overwrite the 'running' state after execution
+    # but the 'running' state will handle the "Searching..." message.
+    # We use no_update to prevent it from immediately overwriting the 'running' message.
+    return no_update  # No direct output from this function
+
+
+# Optional: A callback to display a "Search completed" message or clear the message
+@app.callback(
+    Output("custom-search-output", "children", allow_duplicate=True),
+    Input("search-status-store", "data"),
+    State("custom-search-query-input", "value"),
+    prevent_initial_call=True,
+)
+def handle_search_status_display(status, current_search_query):
+    if status == 'success':
+        return html.Div(
+            dbc.Alert(f"Search for '{current_search_query.strip() if current_search_query else ''}' completed!",
+                      color="success", className="mt-3"),
             style={'text-align': 'center'}
         )
-        # Do not update the store as no valid search was made
-        return search_message, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
-    else:
-        # Query is the same as the last one, prevent update
-        search_message = html.Div(
-            dbc.Alert(f"'{cleaned_current_query}' was last searched. No new action.",
-                      color="info", className="mt-3"),
-            style={'text-align': 'center'}
-        )
-        # Return the "no new action" message but don't update the store's data
-        return search_message, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+    # You could add other status handling here, e.g., 'error'
+    return no_update  # Clear or do nothing if status is not 'success'
 
 
 @app.callback(
@@ -941,7 +1011,7 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     loop.create_task(main())
 
-    app.run()
+    app.run(port="9000")
 # @app.callback(
 #     Output('news-bar', 'children', allow_duplicate=True),
 #     Input("country-dropdown", "value"),

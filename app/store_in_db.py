@@ -10,9 +10,16 @@ from app.db_logic.models import NewsArticle
 from app.db_logic.db import engine
 from app.newsapi_fetcher import get_news
 from sqlalchemy.ext.asyncio import AsyncSession
+from pathlib import Path  # Import Path
 
-load_dotenv()
+from app.scheduled.store_in_redis import store_data_in_redis
 
+# ... (other imports) ...
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+dotenv_path = BASE_DIR / 'app' / '.env'
+
+load_dotenv(dotenv_path)
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 NEWS_URL = f"https://newsdata.io/api/1/latest?apikey={NEWS_API_KEY}&q=pizza"
 
@@ -61,6 +68,8 @@ async def store_in_db():
                 "title": title
             }
             await insert_article(session, data)
+
+    await store_data_in_redis()
 
 if __name__ == "__main__":
     asyncio.run(store_in_db())
