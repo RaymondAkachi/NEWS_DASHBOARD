@@ -1,34 +1,85 @@
 import asyncio
+# import asyncpg
+# import json
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
+# from datetime import datetime, timedelta
+# import pytz  # For timezone-aware scheduling
+
 from app.scheduled.delete_old_news import delete_old_news_articles
 from app.scheduled.store_in_redis import store_data_in_redis
-from .store_in_db import store_in_db
 
-# Async job functions
+# --- Configuration ---
+# Replace with your actual PostgreSQL connection details
+# PG_CONN_STRING = "postgresql://user:password@host:port/database"
+
+# Define your time zone for scheduling (e.g., 'Africa/Lagos' for WAT)
+# Find your timezone here: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+TIME_ZONE = 'Africa/Lagos'  # Or 'UTC', 'America/New_York', etc.
+
+# Example: (You might have this in your app, but defining here for illustration)
 
 
-async def delete_old_news():
-    print("Async: Deleting old news...")
-    await delete_old_news_articles()
+# async def update_redis_cache_for_dashboard_data():
+#     """
+#     Example function to simulate updating Redis with new data.
+#     You'd integrate your actual data processing and Redis setex calls here.
+#     """
+#     # This would involve connecting to Redis (async redis client like `aioredis`)
+#     # Fetching/processing data asynchronously
+#     # Storing it in Redis
+#     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Updating Redis cache...")
+#     await asyncio.sleep(3)  # Simulate data processing and network delay
+#     print(
+#         f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Redis cache update finished.")
 
 
-async def periodic_task():
-    print("Async: Running periodic task...")
-    await store_in_db()               # Wait until DB storing finishes
-    await store_data_in_redis()       # Then store in Redis
+async def main():
+    scheduler = AsyncIOScheduler(timezone=TIME_ZONE)
 
-# Initialize AsyncIOScheduler
-scheduler = AsyncIOScheduler()
+    # Job 1: Delete old news articles every day at midnight (00:00)
+    # The 'trigger' is 'cron', 'hour' and 'minute' specify the time.
+    # The timezone for cron jobs comes from the scheduler's timezone.
+    scheduler.add_job(
+        delete_old_news_articles,
+        trigger='cron',
+        hour=0,  # Midnight
+        minute=0,  # Midnight
+        id='delete_old_news',
+        name='Delete News Older Than 1 Month',
+        replace_existing=True  # Important for restarting the scheduler
+    )
+    print("Scheduled job: 'Delete News Older Than 1 Month' at midnight daily.")
 
-# Add jobs directly without wrap_async
-scheduler.add_job(delete_old_news, CronTrigger(
-    hour=0, minute=0), id='daily_cleanup')
-scheduler.add_job(periodic_task, IntervalTrigger(hours=6), id='six_hour_job')
+    # Job 2: Call my_periodic_function every 4 hours
+    # The 'trigger' is 'interval', 'hours' specifies the interval.
+    scheduler.add_job(
+        store_data_in_redis,
+        trigger='interval',
+        hours=4,
+        id='my_4_hour_task',
+        name='My Every 4 Hour Task',
+        replace_existing=True
+    )
+    print("Scheduled job: 'My Every 4 Hour Task' every 4 hours.")
 
-# Start scheduler inside asyncio loop
-# if __name__ == '__main__':
-#     scheduler.start()
-#     print("Scheduler started")
-#     asyncio.get_event_loop().run_forever()
+    # Start the scheduler
+    scheduler.start()
+    print("APScheduler started.")
+
+    # Keep the asyncio event loop running indefinitely
+    # The scheduler runs in the background within this loop.
+    # try:
+    #     # This prevents the script from exiting immediately
+    #     while True:
+    #         # Sleep for an hour, then re-check (scheduler runs in background)
+    #         await asyncio.sleep(3600)
+    # except (SystemExit, KeyboardInterrupt):
+    #     print("Scheduler stopped.")
+    #     scheduler.shutdown()
+
+if __name__ == "__main__":
+    # Ensure a proper asyncio event loop is running
+    try:
+        asyncio.run(main())
+    except (SystemExit, KeyboardInterrupt):
+        print("Application exit requested.")

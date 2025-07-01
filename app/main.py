@@ -12,8 +12,10 @@ from urllib.parse import urlparse
 from datetime import date, timedelta
 import json
 from datetime import datetime
+import asyncio
 
 from .get_custom_data import get_data, top_news
+from .scheduler import main
 
 
 load_dotenv('app\\.env')
@@ -932,7 +934,11 @@ def time_and_cat_sort(selected_time_value, selected_category_value, selected_cou
 
 # Run the App
 if __name__ == '__main__':
-    app.run(debug=True)
+
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())
+
+    app.run()
 # @app.callback(
 #     Output('news-bar', 'children', allow_duplicate=True),
 #     Input("country-dropdown", "value"),

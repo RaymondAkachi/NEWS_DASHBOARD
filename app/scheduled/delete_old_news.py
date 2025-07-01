@@ -16,3 +16,4 @@ async def delete_old_news_articles():
             delete(NewsArticle).where(NewsArticle.pubDate < cutoff)
         )
         await session.commit()
+        await session.close()
