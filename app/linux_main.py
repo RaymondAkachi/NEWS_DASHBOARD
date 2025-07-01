@@ -196,7 +196,7 @@ app = dash.Dash(__name__, suppress_callback_exceptions=True, external_stylesheet
 # Added dbc.icons.FONT_AWESOME for a potential settings icon on the button
 
 # EXPOSE THE SERVER for Gunicorn
-# server = app.server  # This line is essential!
+server = app.server  # This line is essential!
 
 # --- 3. Define Dashboard Layout ---
 app.layout = dbc.Container([
