@@ -207,7 +207,7 @@ app = dash.Dash(__name__, suppress_callback_exceptions=True, external_stylesheet
 # Added dbc.icons.FONT_AWESOME for a potential settings icon on the button
 
 # EXPOSE THE SERVER for Gunicorn
-server = app.server  # This line is essential!
+# server = app.server  # This line is essential!
 
 # --- 3. Define Dashboard Layout ---
 app.layout = dbc.Container([
@@ -216,6 +216,7 @@ app.layout = dbc.Container([
     dcc.Store(id='last-searched-query-store', data=''),
     dcc.Store(id='search-mode', data='default'),
     dcc.Store(id='search-status-store', data=None),
+    dcc.Store(id='search-trigger-store', data=0),
 
     # Row 1: Dashboard Title
     dbc.Row(
@@ -459,9 +460,9 @@ def handle_custom_search_button(n_clicks):
 
     # Disable and clear dropdowns
     time_disabled = True
-    time_value = "monthly"
+    time_value = None
     category_disabled = True
-    category_value = "summary"
+    category_value = None
 
     offcanvas_open = False  # Close offcanvas
 
@@ -698,6 +699,7 @@ def handle_default_search_button(n_clicks, search_mode):
     Output('news-bar', 'children'),
     Output("country-dropdown", "value"),
     Output('search-status-store', 'data'),  # New output for status
+    Output('search-trigger-store', 'data'),
 
     Input("apply-custom-search", "n_clicks"),
     State("custom-search-query-input", "value"),
@@ -721,7 +723,8 @@ def perform_custom_search(n_clicks, current_search_query, last_searched_query):
         no_update,      # news-bar
         no_update,      # country-dropdown
         # search-status-store (always set to idle when this callback finishes)
-        'idle'
+        'idle',
+        no_update
     ]
 
     if not cleaned_current_query:
@@ -777,14 +780,15 @@ def perform_custom_search(n_clicks, current_search_query, last_searched_query):
             fig_pie,
             news_elements,
             "United States",  # Reset country dropdown, or set to appropriate value
-            'success'  # Indicate success for the status store
+            'success',  # Indicate success for the status store
+            n_clicks
         )
 
 
 # NEW CALLBACK: For displaying the loading message and then clearing/changing it
 @app.callback(
     Output("custom-search-output", "children", allow_duplicate=True),
-    Input("apply-custom-search", "n_clicks"),
+    Input("search-trigger-store", "data"),
     State("custom-search-query-input", "value"),
     prevent_initial_call=True,
     running=[
