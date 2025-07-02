@@ -202,7 +202,7 @@ app = dash.Dash(__name__, suppress_callback_exceptions=True, external_stylesheet
 # Added dbc.icons.FONT_AWESOME for a potential settings icon on the button
 
 # EXPOSE THE SERVER for Gunicorn
-# server = app.server  # This line is essential!
+server = app.server  # This line is essential!
 
 # --- 3. Define Dashboard Layout ---
 app.layout = dbc.Container([
@@ -703,11 +703,11 @@ def perform_custom_search(n_clicks, current_search_query, last_searched_query):
 
     cleaned_current_query = current_search_query.strip() if current_search_query else ''
 
-    if cleaned_current_query and cleaned_current_query != last_searched_query:
+    if cleaned_current_query:
         # Perform search action
 
         search_message = html.Div(
-            dbc.Alert(f"Searching for: '{cleaned_current_query}'...",
+            dbc.Alert(f"Search for: '{cleaned_current_query}' completed",
                       color="success", className="mt-3"),
             style={'text-align': 'center'}
         )
