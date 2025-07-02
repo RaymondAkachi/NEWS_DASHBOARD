@@ -6,7 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 # import pytz  # For timezone-aware scheduling
 
 from app.scheduled.delete_old_news import delete_old_news_articles
-from .store_in_db import store_in_db
+from .store_in_db import NewsProcessor
 
 # --- Configuration ---
 # Replace with your actual PostgreSQL connection details
@@ -53,7 +53,7 @@ async def main():
     # Job 2: Call my_periodic_function every 4 hours
     # The 'trigger' is 'interval', 'hours' specifies the interval.
     scheduler.add_job(
-        store_in_db,
+        NewsProcessor().store_in_db(),
         trigger='interval',
         hours=4,
         id='my_4_hour_task',

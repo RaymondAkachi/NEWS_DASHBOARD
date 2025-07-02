@@ -6,11 +6,12 @@ from app.data_extraction.line_graph_data import get_daily_avg_sentiment
 from app.data_extraction.pie_chart_data import get_sentiment_pie_data
 from app.data_extraction.top_sources import get_top_sources_with_avg_sentiment
 from app.data_extraction.top_news import get_news_headlines  # optional if implemented
+from app.redis_logic.async_redis import RedisClient
 
 load_dotenv('.env')
 
 
-async def store_summary_period(client, label: str, days: int, category: str | None = None):
+async def store_summary_period(client: RedisClient, label: str, days: int, category: str | None = None):
     """
     Helper to store summary for a given period (week/month) and optional category
     under Redis key: sentiment:{label}
@@ -26,7 +27,8 @@ async def store_summary_period(client, label: str, days: int, category: str | No
 
 async def store_data_in_redis():
     REDIS_URL = os.getenv("REDIS_URL")
-    client = redis.from_url(REDIS_URL, decode_responses=True)
+    client = RedisClient(REDIS_URL)
+    await client.initialize()
 
     # Monthly summaries
     await store_summary_period(client, "monthly_summary", days=30)
@@ -43,14 +45,14 @@ async def store_data_in_redis():
     await store_summary_period(client, "weekly_world", days=7, category="World")
 
     # Headline news (optional if implemented)
-    headlines = {
-        "main": await get_news_headlines(sector=None),
-        "business": await get_news_headlines(sector="Business"),
-        "sports": await get_news_headlines(sector="Sports"),
-        "sci_tech": await get_news_headlines(sector="Sci/Tech"),
-        "world": await get_news_headlines(sector="World"),
-    }
-    await client.set("headline_news", json.dumps(headlines))
+    # headlines = {
+    #     "main": await get_news_headlines(sector=None),
+    #     "business": await get_news_headlines(sector="Business"),
+    #     "sports": await get_news_headlines(sector="Sports"),
+    #     "sci_tech": await get_news_headlines(sector="Sci/Tech"),
+    #     "world": await get_news_headlines(sector="World"),
+    # }
+    # await client.set("headline_news", json.dumps(headlines))
 
 
 # To run directly

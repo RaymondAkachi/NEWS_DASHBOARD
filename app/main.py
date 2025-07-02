@@ -4,6 +4,7 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html, dash_table
 import plotly.express as px
 from redis import Redis
+from app.redis_logic.redis import RedisClient
 import os
 from dotenv import load_dotenv
 import pandas as pd
@@ -13,22 +14,26 @@ from datetime import date, timedelta
 import json
 from datetime import datetime
 import asyncio
+import nest_asyncio
 
 from .get_custom_data import get_data, top_news
 from .scheduler import main
-from pathlib import Path  # Import Path
+# from pathlib import Path  # Import Path
 
-# ... (other imports) ...
-BASE_DIR = Path(__file__).resolve().parent.parent
+# # ... (other imports) ...
+# BASE_DIR = Path(__file__).resolve().parent.parent
 
-dotenv_path = BASE_DIR / 'app' / '.env'
+# dotenv_path = BASE_DIR / 'app' / '.env'
 
-load_dotenv(dotenv_path)
-NEWS_API = os.getenv("NEWS_API_KEY")
-REDIS_URL = os.getenv("REDIS_URL")
-print(f"DEBUG: NEWSAPI_KEY loaded: {NEWS_API}")
-NEWS_URL = f"https://newsdata.io/api/1/latest?apikey={NEWS_API}&language=en&q=pizza"
-client = Redis.from_url(REDIS_URL, decode_responses=True)
+# load_dotenv(dotenv_path)
+# NEWS_API = os.getenv("NEWS_API_KEY")
+# REDIS_URL = os.getenv("REDIS_URL")
+# print(f"DEBUG: NEWSAPI_KEY loaded: {NEWS_API}")
+# NEWS_URL = f"https://newsdata.io/api/1/latest?apikey={NEWS_API}&language=en&q=pizza"
+
+nest_asyncio.apply()
+
+client = RedisClient()
 
 # --- 1. Prepare Dummy Data (Same as before) ---
 # Dropdown Options
@@ -92,10 +97,24 @@ COUNTRY_CODES = {
     'Netherlands_nl': {'gl': 'NL', 'hl': 'nl', 'ceid': 'NL:nl'},
     'Zambia': {'gl': 'ZM', 'hl': 'en', 'ceid': 'ZM:en'},
 }
+custom_search_output_children = None
+try:
+    client.initialize()
+    data = client.get("monthly_summary")
+    data = json.loads(data)
+except BaseException:
+    data = {"line_graph": {},
+            "pie_chart": {"good": 0, "okay": 0, "bad": 0},
+            "top_sources": []}
+    custom_search_output_children = html.Div(
+        dbc.Alert(
+            f"A server error occured",
+            color="danger",
+            className="mt-3"
+        ),
+        style={'text-align': 'center'}
+    )
 
-
-data = client.get("monthly_summary")
-data = json.loads(data)
 
 # Dummy Data for Line Graph
 line_graph = data['line_graph']
@@ -202,7 +221,7 @@ app = dash.Dash(__name__, suppress_callback_exceptions=True, external_stylesheet
 # Added dbc.icons.FONT_AWESOME for a potential settings icon on the button
 
 # EXPOSE THE SERVER for Gunicorn
-server = app.server  # This line is essential!
+# server = app.server  # This line is essential!
 
 # --- 3. Define Dashboard Layout ---
 app.layout = dbc.Container([
@@ -226,7 +245,8 @@ app.layout = dbc.Container([
             html.Div([
                 html.Div(id='custom-search-input-container'),
                 # To display search query for demonstration
-                html.Div(id='custom-search-output')
+                html.Div(id='custom-search-output',
+                         children=custom_search_output_children)
             ]),
             width=12
         ),
@@ -714,6 +734,16 @@ def perform_custom_search(n_clicks, current_search_query, last_searched_query):
 
         dates, sentiments, pie_data, top_headlines = get_data(
             cleaned_current_query)
+        if dates == []:
+            search_message = html.Div(
+                dbc.Alert(
+                    f"A server error occured",
+                    color="danger",
+                    className="mt-3"
+                ),
+                style={'text-align': 'center'}
+            )
+
         df_line = pd.DataFrame({
             "Timestamp": dates,
             "Sentiment Score": sentiments
@@ -944,7 +974,10 @@ def time_and_cat_sort(selected_time_value, selected_category_value, selected_cou
 # Run the App
 if __name__ == '__main__':
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Schedule the main() task
     loop.create_task(main())
 
     app.run()
